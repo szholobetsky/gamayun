@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gamayun</title>
+<link rel="stylesheet" href="/ui/style.css">
+<link rel="stylesheet" id="theme-link" disabled>
+<script>
+  // the theme before the first paint: no flash of the default colours
+  (function () {
+    var t = '';
+    try { t = localStorage.getItem('gamayun-theme') || ''; } catch (e) {}
+    var q = new URLSearchParams(location.search).get('theme');
+    if (q !== null) { t = q === 'gamayun' ? '' : q; try { localStorage.setItem('gamayun-theme', t); } catch (e) {} }
+    if (t) { var l = document.getElementById('theme-link'); l.href = '/ui/themes/' + t + '.css'; l.disabled = false;
+             document.documentElement.setAttribute('data-theme', t); }
+  })();
+</script>
+<script src="/ui/i18n.js"></script>
+<script src="/ui/lang/en.js"></script>
+<script src="/ui/lang/uk.js"></script>
+<script src="/ui/lang/de.js"></script>
+<script src="/ui/lang/fr.js"></script>
+<script src="/ui/lang/es.js"></script>
+<script src="/ui/lang/pt.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">🪶</span> Gamayun <small data-i18n="tagline">ontology search, no LLM</small></div>
+  <nav>
+    <button class="tab active" data-tab="search" data-i18n="tab_search">Search</button>
+    <button class="tab" data-tab="companions" data-i18n="tab_companions">Companions</button>
+    <button class="tab" data-tab="health" data-i18n="tab_health">Health</button>
+    <button class="tab" data-tab="map" data-i18n="tab_map">Map</button>
+    <button class="tab" data-tab="entity" data-i18n="tab_entity">Entity</button>
+    <button class="tab" data-tab="projects" data-i18n="tab_projects">Projects</button>
+  </nav>
+  <select id="project" data-i18n-title="project_title"></select>
+  <select id="theme" data-i18n-title="theme_title"></select>
+  <select id="lang" data-i18n-title="lang_title"></select>
+  <button id="refresh" class="small" data-i18n-title="refresh_title">⟳</button>
+</header>
+<div id="scope" class="scope dim"></div>
+
+<main>
+  <!-- SEARCH -->
+  <section id="tab-search" class="panel active">
+    <textarea id="query" rows="4" data-i18n-ph="query_ph"></textarea>
+    <div class="row">
+      <button id="go" class="primary" data-i18n="search_btn">Search</button>
+      <label><span data-i18n="top">top</span> <input id="k" type="number" value="10" min="1" max="50"></label>
+      <span id="search-status" class="dim"></span>
+    </div>
+    <div id="compass" class="compass" hidden></div>
+    <div id="terms" class="terms"></div>
+    <div class="cols">
+      <div><h2 data-i18n="h_modules">Modules</h2><ol id="modules" class="results"></ol></div>
+      <div><h2 data-i18n="h_files">Files</h2><ol id="files" class="results"></ol></div>
+    </div>
+    <div id="symbols-box" hidden><h2 data-i18n="h_symbols">Classes / sections</h2><ol id="symbols" class="results"></ol></div>
+    <p class="help" data-i18n-html="search_help"></p>
+  </section>
+
+  <!-- HEALTH -->
+  <section id="tab-health" class="panel">
+    <div class="row filters">
+      <label><span data-i18n="by">by</span> <select id="h-by"><option value="month" data-i18n="per_month">month</option>
+        <option value="quarter" data-i18n="per_quarter">quarter</option><option value="year" selected data-i18n="per_year">year</option></select></label>
+      <label><span data-i18n="unit_depth">unit depth</span> <select id="h-depth"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <label><span data-i18n="scope">scope</span> <select id="h-scope"><option value="all" data-i18n="scope_all">whole code base</option>
+        <option value="unit" data-i18n="scope_unit">one unit</option><option value="file" data-i18n="scope_file">one file</option></select></label>
+      <input id="h-target" list="h-units" data-i18n-ph="h_target_ph" hidden>
+      <datalist id="h-units"></datalist>
+      <label><span data-i18n="from">from</span> <input id="h-since" data-i18n-ph="date_ph" size="9"></label>
+      <label><span data-i18n="to">to</span> <input id="h-until" data-i18n-ph="date_ph" size="9"></label>
+      <button id="h-go" class="primary" data-i18n="show">Show</button>
+      <span id="h-status" class="dim"></span>
+    </div>
+    <div id="h-out"></div>
+    <details class="guide" open>
+      <summary data-i18n="health_guide_t">What the square measures</summary>
+      <p data-i18n-html="health_guide_1"></p>
+      <p data-i18n-html="health_guide_2"></p>
+    </details>
+  </section>
+
+  <!-- MAP -->
+  <section id="tab-map" class="panel">
+    <div class="row filters">
+      <label data-i18n-title="m_source_title"><span data-i18n="m_source">source</span>
+        <select id="m-source"><option value="ontology" selected data-i18n="m_src_ontology">ontology</option>
+          <option value="history" data-i18n="m_src_history">task history</option></select></label>
+      <label id="m-compare-box" data-i18n-title="m_compare_title"><span data-i18n="m_compare">compare with</span>
+        <select id="m-compare"><option value="" data-i18n="m_none">— none —</option></select></label>
+      <label class="m-time" hidden><span data-i18n="from">from</span> <input id="m-since" data-i18n-ph="date_ph" size="9"></label>
+      <label class="m-time" hidden><span data-i18n="to">to</span> <input id="m-until" data-i18n-ph="date_ph" size="9"></label>
+      <label data-i18n-title="m_min_title"><span data-i18n="m_min">shared tasks ≥</span> <input id="m-min" type="number" min="1" value="3"></label>
+      <label data-i18n-title="m_per_title"><span data-i18n="m_per">edges per node</span> <input id="m-per" type="number" min="1" max="30" value="6"></label>
+      <button id="m-go" class="primary" data-i18n="show">Show</button>
+      <span id="m-status" class="dim"></span>
+    </div>
+    <div id="m-crumbs" class="crumbs"></div>
+    <div class="map-wrap">
+      <div class="chart map" id="m-chart"></div>
+      <aside id="m-side" class="map-side"><p class="dim" data-i18n="m_hint"></p></aside>
+    </div>
+    <div id="m-legend" class="legend"></div>
+    <div id="m-tables"></div>
+    <details class="guide">
+      <summary data-i18n="map_guide_t">How the map is drawn</summary>
+      <p data-i18n-html="map_guide_1"></p>
+      <p data-i18n-html="map_guide_2"></p>
+      <p data-i18n-html="map_guide_3"></p>
+    </details>
+  </section>
+
+  <!-- COMPANIONS -->
+  <section id="tab-companions" class="panel">
+    <textarea id="comp-text" rows="6" data-i18n-ph="comp_ph"></textarea>
+    <div class="row">
+      <button id="comp-go" class="primary" data-i18n="comp_btn">Find companions</button>
+      <label><span data-i18n="top">top</span> <input id="comp-k" type="number" value="10" min="1" max="30"></label>
+      <span id="comp-status" class="dim"></span>
+    </div>
+    <div id="comp-out"></div>
+    <p class="help" data-i18n-html="comp_help"></p>
+  </section>
+
+  <!-- ENTITY -->
+  <section id="tab-entity" class="panel">
+    <div class="row">
+      <input id="entity-name" data-i18n-ph="entity_ph">
+      <button id="entity-go" class="primary" data-i18n="show">Show</button>
+    </div>
+    <div id="entity-out"></div>
+
+    <details id="entity-guide" class="guide" open>
+      <summary data-i18n="eg_title">What Gamayun stores, and what you can look up here</summary>
+      <p data-i18n-html="eg_intro"></p>
+
+      <h3 data-i18n="eg_elements">Elements</h3>
+      <p class="dim" data-i18n="eg_elements_note"></p>
+      <table class="guide-t">
+        <tr><th data-i18n="eg_th_prefix">prefix</th><th data-i18n="eg_th_element">element</th><th data-i18n="eg_th_from">where it comes from</th><th data-i18n="eg_th_example">example</th></tr>
+        <tr><td><code>term:</code></td><td data-i18n="eg_term"></td><td data-i18n="eg_both_kinds"></td><td><a class="ent ex">term:validation</a></td></tr>
+        <tr><td><code>module:</code></td><td data-i18n="eg_module"></td><td data-i18n="eg_both"></td><td><a class="ent ex">module:server</a></td></tr>
+        <tr><td><code>dir:</code></td><td data-i18n="eg_dir"></td><td data-i18n="eg_both"></td><td class="dim">dir:&lt;path&gt;</td></tr>
+        <tr><td><code>file:</code></td><td data-i18n="eg_file"></td><td data-i18n="eg_both"></td><td class="dim">file:&lt;path&gt;</td></tr>
+        <tr><td><code>ident:</code></td><td data-i18n="eg_ident"></td><td data-i18n="eg_files_project"></td><td class="dim">ident:&lt;Name&gt;</td></tr>
+        <tr><td><code>sym:</code></td><td data-i18n="eg_sym"></td><td data-i18n="eg_files_project"></td><td class="dim">sym:&lt;file#Name&gt;</td></tr>
+        <tr><td><code>dataset</code></td><td data-i18n="eg_dataset"></td><td data-i18n="eg_both"></td><td><a class="ent ex">dataset</a></td></tr>
+      </table>
+
+      <h3 data-i18n="eg_db_t">Relations of a project built from a task database</h3>
+      <p class="dim" data-i18n="eg_db_note"></p>
+      <table class="guide-t">
+        <tr><th data-i18n="eg_th_relation">relation</th><th data-i18n="eg_th_means">means</th><th data-i18n="eg_th_rule">rule</th></tr>
+        <tr><td><code>term characterizes module / dir / file</code></td><td data-i18n="eg_r_char_m"></td><td data-i18n-html="eg_r_char_r"></td></tr>
+        <tr><td><code>term not_in module</code></td><td data-i18n="eg_r_notin_m"></td><td data-i18n-html="eg_r_notin_r"></td></tr>
+        <tr><td><code>term anchor_of module</code></td><td data-i18n="eg_r_anchor_m"></td><td data-i18n="eg_r_anchor_r"></td></tr>
+        <tr><td><code>term names file</code></td><td data-i18n="eg_r_names_m"></td><td data-i18n="eg_r_names_r"></td></tr>
+        <tr><td><code>file co_changes_with file</code></td><td data-i18n-html="eg_r_cochange_m"></td><td data-i18n="eg_r_cochange_r"></td></tr>
+        <tr><td><code>term narrower_than term</code></td><td data-i18n="eg_r_narrower_m"></td><td data-i18n="eg_r_narrower_r"></td></tr>
+        <tr><td><code>module depends_on module</code></td><td data-i18n="eg_r_depends_m"></td><td data-i18n="eg_r_depends_r"></td></tr>
+        <tr><td><code>part_of</code>, <code>task_count</code>, <code>train_tasks</code></td><td data-i18n="eg_r_counts_m"></td><td data-i18n="eg_r_counts_r"></td></tr>
+      </table>
+
+      <h3 data-i18n="eg_folder_t">Relations of a project built from a folder</h3>
+      <p class="dim" data-i18n="eg_folder_note"></p>
+      <table class="guide-t">
+        <tr><th data-i18n="eg_th_relation">relation</th><th data-i18n="eg_th_means">means</th><th data-i18n="eg_th_rule">rule</th></tr>
+        <tr><td><code>term characterizes file / dir / module / sym</code></td><td data-i18n="eg_f_char_m"></td><td data-i18n="eg_f_char_r"></td></tr>
+        <tr><td><code>ident defined_in file / sym</code></td><td data-i18n="eg_f_def_m"></td><td data-i18n="eg_f_def_r"></td></tr>
+        <tr><td><code>ident used_in file / sym</code></td><td data-i18n="eg_f_used_m"></td><td data-i18n="eg_f_used_r"></td></tr>
+        <tr><td><code>ident has_part term</code></td><td data-i18n="eg_f_part_m"></td><td data-i18n="eg_f_part_r"></td></tr>
+        <tr><td><code>sym member_of sym</code></td><td data-i18n="eg_f_member_m"></td><td data-i18n="eg_f_member_r"></td></tr>
+        <tr><td><code>term related_to term</code></td><td data-i18n="eg_f_related_m"></td><td data-i18n="eg_f_related_r"></td></tr>
+        <tr><td><code>term is_a term</code></td><td data-i18n="eg_f_isa_m"></td><td data-i18n="eg_f_isa_r"></td></tr>
+        <tr><td><code>term same_as term</code></td><td data-i18n="eg_f_same_m"></td><td data-i18n="eg_f_same_r"></td></tr>
+        <tr><td><code>term variant_of term</code></td><td data-i18n="eg_f_variant_m"></td><td data-i18n="eg_f_variant_r"></td></tr>
+        <tr><td><code>term is function_word / domain_core</code></td><td data-i18n="eg_f_fw_m"></td><td data-i18n-html="eg_f_fw_r"></td></tr>
+      </table>
+
+      <h3 data-i18n="eg_in_project">In this project</h3>
+      <div id="guide-counts" class="dim"></div>
+    </details>
+  </section>
+
+  <!-- PROJECTS -->
+  <section id="tab-projects" class="panel">
+    <div id="project-list"></div>
+    <h2 data-i18n="build_t">Build a project</h2>
+    <div class="form">
+      <label><span data-i18n="b_project">Project name</span> <input id="b-project" placeholder="sonar"></label>
+      <label><span data-i18n="b_db">Task database (.db)</span> <input id="b-db" placeholder="C:/Projects/Data/sonar.db"></label>
+      <label><span data-i18n="b_files">— or files: a folder of documents / code (no database)</span> <input id="b-files" placeholder="C:/Projects/docs"></label>
+      <label><span data-i18n="b_repo">Git repository (optional, adds module depends_on)</span> <input id="b-repo" placeholder="C:/Projects/Data/sonarqube"></label>
+      <label><span data-i18n="b_root">Keep the ontology in</span>
+        <input id="b-root" placeholder="C:/Projects/Data/sonarqube  →  …/sonarqube/.gamayun/&lt;project&gt;"></label>
+      <button id="b-go" class="primary" data-i18n="b_go">Build</button>
+    </div>
+    <pre id="job-log" class="log" hidden></pre>
+    <p class="help" data-i18n-html="projects_help"></p>
+  </section>
+</main>
+<script>applyLang();</script>
+<script src="/ui/app.js"></script>
+<script src="/ui/map.js"></script>
+</body>
+</html>

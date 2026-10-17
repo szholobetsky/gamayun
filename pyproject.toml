@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gamayun"
+version = "0.1.0"
+description = "Task-to-code search over an ontology built WITHOUT an LLM from a task tracker and git history, or from a folder of documents and code: every triple is a significance test with its numbers attached."
+requires-python = ">=3.10"
+readme = {file = "README.md", content-type = "text/markdown"}
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "flask>=3.0",
+    "waitress>=2.1",
+    "mokosh>=0.1",       # gathers the task/commit database a project is built from
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage   = "https://github.com/szholobetsky/gamayun"
+Repository = "https://github.com/szholobetsky/gamayun"
+
+[project.scripts]
+gamayun = "gamayun.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+"gamayun" = ["ui/**/*"]
