@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gamayun"
-version = "0.1.0"
+name = "gamayun-ontology"
+version = "0.1.2"
 description = "Task-to-code search over an ontology built WITHOUT an LLM from a task tracker and git history, or from a folder of documents and code: every triple is a significance test with its numbers attached."
 requires-python = ">=3.10"
 readme = {file = "README.md", content-type = "text/markdown"}

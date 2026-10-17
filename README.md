@@ -2,220 +2,297 @@
 
 # gamayun
 
-**Task-to-code search over an ontology built without an LLM.**
+Ontology generator and manager for software projects — builds a statistical ontology of a code base from its task tracker and git history, or from a folder of documents and code, without an LLM or a GPU.
 
-Given a task description, gamayun ranks the modules and files that are likely to change, and
-explains every result with the triples that produced it. The ontology is built from a task
-tracker plus git history (the simargl / codeXtract SQLite layout), or from a plain folder of
-documents and code. Every triple is a significance test, and the numbers that made it pass
-travel with it:
+## What it does
 
-```
-term:scanner :: characterizes :: module:sonar-scanner-engine  [src: n=205;df=388;g2=820.7;lift=11.01]
-term:scanner :: not_in        :: module:sonar-server          [src: expected=46.7;observed=0;p0=2.4e-22]
-file:server/sonar-web/package.json :: co_changes_with :: file:server/sonar-web/yarn.lock  [src: n=67;g2=658.9;lift=94.38]
-```
+gamayun turns a project's history into an ontology: a set of facts (triples) linking the words of
+tasks, code identifiers, files, folders and modules. A fact is kept only if it passes a
+significance test, and its numbers stay attached to it, so every fact can be checked.
 
-Part of the SIMARGL family, next to **simargl** (embeddings: "what is similar in meaning") and
-**svitovyd** (project map: "what is connected in the code"). gamayun answers a third question:
-"what changes together with what in this project's history, and how sure are we".
+The ontology is then used to:
+
+- **search** — rank the modules, files and symbols a task description is likely to touch;
+- **compass** — suggest where to start reading the code for a task, with a confidence level;
+- **companions** — list the files that usually change together with a given set of files;
+- **health** — show how the code base evolves (evolution, maintenance, disruption, stagnation);
+- **map** — draw the modules and the coupling between them in the browser;
+- **show** — list everything the ontology knows about a term, identifier, module or file.
+
+gamayun manages several ontologies on one machine: each project is built, refreshed, evaluated and
+opened by name from the command line or the web UI. It runs on an ordinary laptop and works
+fully offline once the data is collected.
+
+## Statement of need
+
+When a task arrives ("Login fails after the session expires"), a developer has to find the code
+it concerns. In a large or unfamiliar code base this is slow, and much of the knowledge it needs
+sits in the project's history: which parts of the code tasks about *login* or *sessions* have
+changed before, and which files are always edited together.
+
+gamayun makes that history searchable. It is meant for:
+
+- **developers** who maintain or join a large project and need to know where a task leads, which
+  files a change will drag along, and which parts of the code keep getting coupled;
+- **researchers in software engineering** who study task-to-code traceability, change impact,
+  co-change (logical coupling) and software evolution, and need results that are explainable and
+  reproducible.
+
+Search tools based on embeddings or LLMs need a model, often a GPU, and give answers that cannot
+be traced back to their reasons. gamayun uses only counting and significance tests. It needs no
+model and no GPU, sends no code anywhere, gives the same answer for the same history every time,
+and shows the evidence for every result.
 
 ---
 
 ## Install
 
 ```bash
-pip install gamayun       # numpy, scipy, flask, waitress, mokosh; no GPU, no LLM
+pip install gamayun-ontology
 ```
 
-The task database comes from **[mokosh](https://github.com/szholobetsky/mokosh)**, installed with
-gamayun: `mokosh init` and `mokosh ingest` in the repository folder read its commits and fetch
-their tasks from Jira, GitHub, GitLab or YouTrack into `units.db`.
+The package is called `gamayun-ontology`. The command and the Python module are both `gamayun`.
+It needs Python 3.10+ and brings numpy, scipy, Flask, waitress and
+**[mokosh](https://pypi.org/project/mokosh/)**, the tool that collects the task history.
 
-## Use
+---
+
+## Quick start
+
+### A: from your project's history (git + tracker)
 
 ```bash
-mokosh init && mokosh ingest                                      # the database: commits + tasks
-gamayun index  --db sonar.db --repo ./sonarqube --project sonar   # ~40 s, no GPU (alias: build)
-gamayun eval   --project sonar      # tune on dev, test once (a few minutes)
-gamayun search "Scanner crashes when analysing a branch" --project sonar
-gamayun show   term:scanner --project sonar
-gamayun list
-gamayun ui     --port 8095          # http://127.0.0.1:8095/
+cd my-project                          # a git clone
+
+mokosh init                            # repository, branch, tracker (Jira, GitHub, GitLab, YouTrack)
+mokosh ingest                          # commits + their tasks -> units.db
+
+gamayun index --db units.db --repo . --project myproj
+gamayun eval  --project myproj         # optional: tunes the ranking on your history
+
+gamayun search "Login fails after the session expires" --project myproj
+gamayun ui                             # http://127.0.0.1:8095/
 ```
 
-### Files instead of a task database
+Building takes seconds to a few minutes, depending on the size of the history. To refresh it later,
+run `mokosh ingest` and `gamayun index` again.
+
+### B: from a folder of documents and/or code
 
 ```bash
-gamayun index  --files ./docs --project docs        # documents, code, or both
-gamayun search "фінальний період бюджету" --project docs
-gamayun show   ident:final_period --project docs
+gamayun index  --files ./docs --project docs
+gamayun search "budget closing period" --project docs
+gamayun show   ident:final_period --project docs     # where it is defined and used
 ```
 
-Without tasks the 2×2 tables are counted over units of text: a paragraph of a document, the body
-of one class / function / method in code. Targets are module ⊃ dir ⊃ file ⊃ symbol (class or
-document section), so search also ranks classes and sections. Identifiers (`final_period`,
-`BudgetService`) are `ident:` entities with `defined_in`, `used_in`, `has_part` and
-`characterizes`. Documents add Hearst patterns (`petrol is_a fuels`) and abbreviations
-(`tco same_as total cost of ownership`). There is no built-in stop list: words spread over files
-like chance (residual IDF ≈ 0) are `function_word`; words that also name files are `domain_core`;
-word forms merge by recurring ending pairs (`users variant_of user`, `онтології variant_of онтологія`).
-`eval` needs tasks, so these projects search with default parameters. Details:
-`concepts/GAMAYUN.md` §16 in the simrgl repository.
+---
 
-A database project and a files project of the same codebase are best kept as two projects
-(`sonar` and `sonar-code`): mixing the code ontology into task ranking did not help (simrgl
-`exp8.1`), but the code ontology answers its own questions — where an identifier is defined and
-used, and which identifiers belong together.
+## Commands
 
-### Projects and web UI
+| Command | What it does |
+|---|---|
+| `gamayun index --db DB [--repo REPO] --project P` | Build the ontology from a task database (`--repo` adds module dependencies) |
+| `gamayun index --files FOLDER --project P` | Build it from a folder of documents and/or code |
+| `gamayun search "text" --project P` | Rank the modules, files and symbols for a task |
+| `gamayun compass "text" --project P` | Where to start, with a confidence level |
+| `gamayun companions FILE… --project P` | Files that usually change together with these (`--from answer.txt` reads them from a text) |
+| `gamayun show ENTITY --project P` | Everything known about `term:x`, `ident:x`, `module:x`, `dir:x`, `file:x`, `sym:x` |
+| `gamayun health --project P` | The evolution square, `--by month\|quarter\|year`, `--units`, `--unit PATH`, `--file PATH` |
+| `gamayun eval --project P` | Tune the ranking on your history and report its quality |
+| `gamayun list` | Every project on this machine |
+| `gamayun ui [--port 8095] [--host 0.0.0.0]` | The web UI |
 
-A project lives next to what it describes. Run `gamayun index` in the repository folder and the
-ontology goes to `<folder>/.gamayun/<project>/` (or `--root <folder>`): `triples.txt`, `params.json`
-(tuned ranking parameters; defaults until `eval`), `stats.json`, `source.json`, `eval/`.
-`~/.gamayun/projects.json` only remembers where each project is, so `gamayun ui`, `search`,
-`compass` started from any folder find it by name. To keep several projects in one place — say,
-all the ontologies of a study next to its documents — build each with the same `--root`.
+`search`, `compass` and `companions` take `--json` for scripts and agents, and `--k N` to set how
+many results to return.
+
+---
+
+## Example
+
+The output below comes from a small demo shop project (tasks such as *Cart total wrong after
+discount* or *Invoice number duplicated*, with the files they changed).
 
 ```
-cd C:\Projects\Data\sonarqube
-gamayun index --db ..\sonar.db --repo . --project sonar     # -> sonarqube\.gamayun\sonar\
-cd ~
-gamayun ui                                                  # sees sonar, flink, ... and switches between them
+$ gamayun search "Login fails after the session expires" --project shop --k 3
+terms: expires fails login session
+
+modules:
+   1. auth                                        1.57  expires +0.82, fails +0.82, session +0.81, login +0.80
+   2. web                                        -0.79  session +0.25, login +0.23
+   3. common                                     -1.72
+
+files:
+   1. auth/src/LoginController.java
+        login/names +2.12, login/file +0.79, session/file +0.78, expires/file +0.73
+   2. auth/src/SessionManager.java
+        session/names +1.93, expires/file +0.85, fails/file +0.85, session/file +0.83
+   3. auth/src/TokenRefresher.java
+        expires/file +0.85, fails/file +0.85, session/file +0.82, login/file +0.81
 ```
 
-The web UI works on one project at a time: choose it at the top, and every page asks about that
-project's ontology only; switching clears what the previous one left on screen. Projects
-registered on the machine are listed, and so are those under the folder the UI was started in.
-**Search** shows the **compass** (where to start, and how sure: a rare literal anchor of the task
-found in the project's repository, else the ranking) and the ranked modules, files and symbols;
-open a result to see the triples behind its score. **Companions** takes a list of files, or an
-answer that names them, and shows the files that changed together with them in past tasks.
-**Health** draws the evolution square of the task history (below) for the whole code base, one
-unit or one file, by month, quarter or year, ranks the units by stagnation and lists the dated
-snapshots of earlier builds. **Map** draws the modules and the coupling between them, one layer
-at a time: the top modules first, and a click on one opens the map of its own sub-folders
-(below). **Entity** lists every triple of a term, identifier, module, dir, file or symbol, with a guide to
-what the ontology holds. **Projects** builds projects (from a database or a folder) and evaluates
-the database ones. A link like `/?project=sonar&q=...` opens a search directly. The theme picker
-in the header has gamayun's own palette (light or dark with the system) and the eight themes of
-vyrii and alkonost (`&theme=ocean` in a link); the language picker next to it has the same six
-languages as vyrii — English, Ukrainian, German, French, Spanish, Portuguese (`&lang=uk`). Only the
-interface is translated: terms, paths, relations and task titles are data and stay as they are.
+Next to each result are the words that put it there and how much each one weighed. To see a fact
+behind a word:
+
+```
+$ gamayun show term:login --project shop --limit 1
+term:login :: characterizes :: module:auth  [src: n=123;df=132;g2=480.3;lift=4.97]
+```
+
+The numbers in brackets are the evidence: the word and the module appeared together in 123 of
+the 132 tasks with that word, about 5 times more often than chance would give. Only facts that
+pass a significance test are kept.
+
+The files that usually change together with a given one:
+
+```
+$ gamayun companions checkout/src/Cart.java --project shop --k 2
+chosen (1): checkout/src/Cart.java
+
+changed together with them, not chosen:
+   1. checkout/src/DiscountRule.java
+        with 1 of 1 chosen (Cart.java); G2 84.7
+   2. checkout/src/PriceCalculator.java
+        with 1 of 1 chosen (Cart.java); G2 81.1
+```
+
+---
+
+## Web UI
+
+`gamayun ui` opens every project on the machine in the browser. You pick a project at the top.
+
+- **Search:** the compass and the ranked results; open a result to see the facts behind it.
+- **Companions:** paste a list of files, or an answer that names them.
+- **Health:** the evolution square for the whole code base, one unit or one file, over time, and
+  the units ranked by stagnation.
+- **Map:** the modules and their coupling, one layer at a time; click a module to open its
+  sub-folders, or a link to see what it is made of.
+- **Entity:** everything about one term, identifier, module or file.
+- **Projects:** build and evaluate projects without the command line.
+
+A link like `/?project=myproj&q=...` opens a search directly. The UI has 9 colour themes and 6
+languages (English, Ukrainian, German, French, Spanish, Portuguese).
 
 ---
 
 ## Health: the evolution square
 
-`gamayun health` reads the task history of a database project and shows how the code base
-changes: every task of 2–30 files is a set of file pairs that changed together. A pair is
-**novel** if those files had not changed together in any earlier task (judged on the history up to
-that task's date only), and **structural** if both lie in the same unit — the first folders of the
-path up to a source-layout folder (`server/sonar-web`, `sonar-core`).
+Every past task is a set of files that changed together. A pair of them is **new** if they never
+changed together before, and **local** if both are in the same unit of the code. That gives four
+zones:
 
 |  | across units | inside a unit |
 |---|---|---|
-| **novel** | DISRUPTION — new coupling, the architecture erodes | EVOLUTION — new work where it belongs |
-| **known** | STAGNATION — the same cross-unit pairs again, shotgun surgery | MAINTENANCE — routine work |
+| **new pair** | DISRUPTION: new coupling, the architecture erodes | EVOLUTION: new work where it belongs |
+| **known pair** | STAGNATION: the same cross-unit edits again and again | MAINTENANCE: routine work |
 
 ```bash
-gamayun health --project sonar --by year            # the whole code base, year by year
-gamayun health --project sonar --units --since 2020 # every unit ranked by stagnation
-gamayun health --project sonar --unit server/sonar-web --by quarter   # one unit: cohesion vs coupling
-gamayun health --project sonar --file sonar-core/src/main/resources/org/sonar/l10n/core.properties
+gamayun health --project myproj --by year              # the whole code base, year by year
+gamayun health --project myproj --units --since 2024   # units ranked by stagnation
+gamayun health --project myproj --unit checkout --by quarter
 ```
 
-For one unit, structural means both files inside it, so its square is its cohesion against its
-coupling; the units with the most stagnation keep dragging the same outside files along —
-refactoring candidates. Every `gamayun index` of a database keeps a dated snapshot of the whole
-square in `health/<date>.json`, so builds can be compared month by month. The web UI has the same
-on its **Health** page (`/?project=sonar&tab=health`). The metrics — Novelty@K, Structurality@K,
-SES, HES — come from the SIMARGL concept (`concepts/SIMARGL_concept.md` in the simrgl repository).
+The units with the most stagnation keep dragging the same outside files along, so they are
+good refactoring candidates. Each `gamayun index` keeps a dated snapshot, so you can compare
+builds month by month.
 
-## Map: modules and their coupling
+---
 
-The **Map** page of the web UI (`/?project=sonar&tab=map[&prefix=server&since=2022]`) is read in
-layers. The first layer shows the top modules; clicking a module with sub-folders (drawn with a
-ring) opens the map of its children only, and the path above the map leads back
-(`sonar › server › sonar-web`). Source-layout folders (`src/main/java`) are passed through, and a
-chain of single folders is skipped. A module is sized by the tasks that touched it and coloured by
-the leading zone of its own square; a link joins two modules changed together by at least
-*N* tasks, its width is the number of those tasks, and each module keeps only its strongest
-links. With a start date, links that had never appeared before it are drawn as **new** — the
-coupling that is growing now. Hover a link to see how strong it is both ways; click it for what it is made of:
-P(B|A) and P(A|B), the shared tasks per year, the share of new file pairs (disruption) against the
-same pairs again (stagnation), the title words that set the shared tasks apart (G²), the file pairs
-and files that carry it and the latest shared tasks (`&edge=A|B` links straight to it). Hover a module to see its neighbours, open its health square from
-the side panel; wheel to zoom, drag to pan or move a module. A table under the map lists every
-module and link.
+## Where projects live
 
-### Sources of the map: ontology, code, history
+A project is stored next to what it describes, in `<folder>/.gamayun/<project>/` (or in
+`--root FOLDER`). `~/.gamayun/projects.json` only remembers where each one is, so `gamayun ui`,
+`search` and the other commands find a project by name from any folder.
 
-The map reads the **ontology** by default — the project's `triples.txt` only, a few tenths of a
-second per layer and no database (the task database of a large project is gigabytes, its ontology
-tens of megabytes). For a project built from tasks a link is the significant co-change pairs of
-files across two modules (`co_changes_with`; the largest *n* among them is a lower bound on the
-shared tasks), and a module is coloured by **cohesion** — the share of its significant pairs that
-stay inside it. For a project built from **code** (`--files`) a link is the identifiers defined on
-one side and used on the other, both ways (`defined_in` / `used_in`: who uses whom); cohesion is
-then the share of a module's identifier uses that stay inside it.
+For one code base, keep the history project and the files project separate (for example `shop`
+and `shop-code`). They answer different questions: what changes together, and what is defined
+and used where.
 
-**Compare with** a code project of the same repository overlays the two on one layer:
+---
 
-| link | meaning |
+## How it works
+
+gamayun counts and tests; it does not generate anything. For every pair, such as a word and a
+module, a file and another file, or an identifier and a file, it checks whether they occur together
+more often than chance would give (Dunning's G² test, p < 0.001). Only the pairs that pass become
+facts (triples). A search adds up the evidence of the task's words with naive Bayes and returns the
+best-supported targets, together with the facts that support them.
+
+| Fact | Meaning |
 |---|---|
-| both | they change together and one uses the other — coupling the code explains |
-| hidden | they change together with no identifier between them — logical coupling |
-| stable | one uses the other, but they do not change together — a stable dependency |
-| gone | they changed together, but one side is no longer in the code (history spans years, the code is one snapshot) |
+| `term characterizes module/file` | tasks with this word usually change this |
+| `term not_in module` | tasks with this word never change this |
+| `term anchor_of module` | the word belongs almost entirely to one module |
+| `file co_changes_with file` | the two files change together |
+| `module depends_on module` | the code of one imports the other |
+| `ident defined_in / used_in file` | where an identifier is defined and used (folder projects) |
+| `term is_a term`, `term same_as term` | from the text of documents: "X such as Y", "Total Cost of Ownership (TCO)" |
 
-The ontology has no dates; **task history** as the source reads the database instead and adds the
-time window, new links, the zones of the squares, and per link P(B|A), years and task titles.
+Because every fact is a statistic you can check, the results are explainable and reproducible:
+the same history always gives the same answer.
 
-## Predicates
+## Python API
 
-| Predicate | Rule |
-|---|---|
-| `term characterizes module/dir/file` | G² (Dunning) of task-has-term × task-changes-target, p < 0.001, positive, minimum support |
-| `term anchor_of module` | Herfindahl index of the term's spread over modules ≥ 0.5 |
-| `term names file` | term is part of the camelCase file name and they co-occur in ≥ 2 tasks |
-| `term not_in module` | zero co-occurrences where chance predicts some: (1−r)^df < 0.001 |
-| `file co_changes_with file` | G² over tasks changing ≤ 30 files |
-| `term narrower_than term` | subsumption P(A\|B) ≥ 0.8 (mostly catches stack traces — not used in ranking) |
-| `module depends_on module` | Java imports at the last commit of the database (`git cat-file`, no checkout) |
-| `part_of`, `task_count` | paths and counts |
+The command line is a thin layer over the package; the same can be done from Python.
 
-A files project adds:
+```python
+from gamayun import pipeline, store
+from gamayun.onto import Onto
 
-| Predicate | Rule |
-|---|---|
-| `ident defined_in file/sym` | a class / function / method definition, line-based regexes for common languages |
-| `ident used_in file/sym` | rare identifiers only (in ≤ 20 units) |
-| `ident has_part term` | the words of a camelCase / snake_case identifier |
-| `term related_to term` | G² co-occurrence in units, top 10 per term |
-| `term is_a term` | Hearst patterns ("X such as Y", "Y and other X"; English and Ukrainian) |
-| `abbr same_as phrase` | "Total Cost of Ownership (TCO)" |
-| `term variant_of term` | word forms merged by recurring ending pairs and similar spread over files |
-| `term function_word` / `domain_core` | residual IDF (Church & Gale) and presence in file names |
+# build (the same as `gamayun index`)
+pipeline.build_project("units.db", "myproj", repo=".")        # from a task database
+pipeline.build_folder_project("./docs", "docs")               # from a folder
 
-## Ranking
+# load a project and search
+O = Onto(store.project_dir("myproj"))                         # or a path to triples.txt
+res = O.query("Login fails after the session expires").search(pipeline.load_params("myproj"), k=10)
 
-Naive Bayes: `log P(target) + λ · Σ log lift(term, target)`, with `not_in` as negative
-evidence, dir/module back-off for files (β, β₂), file-name matches (μ) and co-change (γ).
-Parameters are tuned on 200 dev tasks taken from the training tasks, and the test tasks never
-choose a parameter.
+for m in res["modules"]:
+    print(m["target"], m["score"])
+    for e in m["evidence"]:
+        print("   ", e["term"], e["value"], e["triple"])
 
-## Results (200 test tasks, exp3 `modn` split)
+O.companions(["checkout/src/Cart.java"], k=5)      # files that change together with these
+O.entity("term:login")                            # every triple of an entity
+```
 
-| MAP | sonar | flink |
-|---|---|---|
-| modules, most frequent | 0.693 | 0.363 |
-| **modules, gamayun** | **0.752** | **0.656** |
-| files, most frequent | 0.045 | 0.018 |
-| **files, gamayun** | **0.116** | **0.124** |
+`search` returns a dictionary with `terms` (the words of the task it used), `modules` and `files`
+(and `symbols` for a folder project). Each result has a `target`, a `score` and its `evidence`:
+the term, its weight and the triple behind it.
 
-The method is described step by step, with formulas and worked examples, in `concepts/GAMAYUN.md`
-of the simrgl repository. The experiment is in `exp7/` there.
+## Ontology format
+
+A project is a folder with the ontology as plain text, `triples.txt`, one fact per line:
+
+```
+subject :: predicate :: object  [src: name=value;...]
+```
+
+Entities are typed by a prefix: `term:`, `ident:`, `module:`, `dir:`, `file:`, `sym:`.
+The `src` part holds the statistics the fact was accepted on (`n` co-occurrences, `df` document
+frequency, `g2`, `lift`, `expected`, …). The file can be read, searched with `grep` or loaded by
+other tools without gamayun. Next to it are `params.json` (ranking parameters), `stats.json`,
+`source.json` (what the project was built from) and the results of `eval`.
+
+---
+
+## Tests
+
+```bash
+git clone https://github.com/szholobetsky/gamayun
+cd gamayun
+pip install -e ".[dev]"
+pytest
+```
+
+The tests build small ontologies from generated databases and folders, so they need no external
+data and run in under a minute.
+
+## Support
+
+The project is on GitHub: [github.com/szholobetsky/gamayun](https://github.com/szholobetsky/gamayun).
+Questions, bug reports and suggestions go to its
+[issues](https://github.com/szholobetsky/gamayun/issues).
 
 ---
 
@@ -252,6 +329,10 @@ Together they cover the full development loop: understand the codebase, find rel
 The name comes from Slavic mythology. Gamayun (Гамаюн) is the prophetic bird with a woman's face, the messenger of the gods who knows everything about the world and tells it to those who can listen. A fitting name for a tool that foretells which code a task will touch — and always says why.
 
 ---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ## About
 
